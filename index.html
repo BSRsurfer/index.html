@@ -180,7 +180,12 @@ function startScanner() {
     return;
   }
   var constraints = {
-    video: { facingMode: { exact: 'environment' } },
+    video: {
+      facingMode: { exact: 'environment' },
+      focusMode: 'continuous',
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
     audio: false
   };
   navigator.mediaDevices.getUserMedia(constraints)
