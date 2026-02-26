@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QR Code Scanning</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0d1117; --surface:#161b22; --border:#30363d;
+    --accent:#f0a500; --ok:#238636; --err:#da3633;
+    --text:#e6edf3; --muted:#8b949e;
+  }
+  body { background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    min-height:100vh; display:flex; justify-content:center; padding:24px 16px 48px; }
+  #root { width:100%; max-width:480px; display:flex; flex-direction:column; gap:20px; }
+
+  h1 { font-size:22px; font-weight:900; }
+  p.sub { font-size:14px; color:var(--muted); line-height:1.6; margin-top:4px; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px; }
+  .card h2 { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:14px; }
+
+  /* Camera */
+  .cam-wrap { position:relative; width:100%; border-radius:10px; overflow:hidden;
+    background:#000; display:none; }
+  .cam-wrap.active { display:block; }
+  #cam-video { width:100%; display:block; max-height:300px; object-fit:cover; }
+  #cam-canvas { display:none; }
+  .scan-overlay { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; pointer-events:none; }
+  .scan-box { width:200px; height:200px; border:3px solid var(--accent); border-radius:12px;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.45);
+    animation:pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse {
+    0%,100% { border-color:var(--accent); box-shadow:0 0 0 2000px rgba(0,0,0,.45),0 0 0 0 rgba(240,165,0,.4); }
+    50%      { border-color:#fff;         box-shadow:0 0 0 2000px rgba(0,0,0,.45),0 0 12px 4px rgba(240,165,0,.5); }
+  }
+  .scan-hint { position:absolute; bottom:12px; left:0; right:0; text-align:center;
+    font-size:12px; color:rgba(255,255,255,.85); font-weight:600; }
+  .scan-flash { position:absolute; inset:0; background:rgba(240,165,0,.3);
+    opacity:0; transition:opacity .2s; pointer-events:none; }
+
+  .status-badge { display:inline-flex; align-items:center; gap:7px;
+    font-size:12px; font-weight:700; padding:6px 12px; border-radius:20px;
+    margin-bottom:14px; background:#0d1117; border:1px solid var(--border); }
+  .status-badge .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .status-badge.scanning .dot { background:#22c55e; animation:dotpulse 1s ease-in-out infinite; }
+  .status-badge.scanning { border-color:#22c55e33; color:#22c55e; }
+  @keyframes dotpulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .btn-row { display:flex; gap:8px; margin-top:12px; }
+  .btn { flex:1; padding:12px; border:none; border-radius:8px; font-size:14px;
+    font-weight:700; cursor:pointer; transition:opacity .15s; }
+  .btn-start { background:var(--accent); color:#000; }
+  .btn-stop  { background:#21262d; color:var(--text); border:1px solid var(--border); display:none; }
+  .btn:hover { opacity:.85; }
+
+  /* Manual input */
+  .input-row { display:flex; gap:8px; }
+  .input-row input { flex:1; background:#0d1117; border:2px solid var(--border);
+    border-radius:8px; padding:14px 16px; font-size:15px; font-family:monospace;
+    color:var(--text); outline:none; letter-spacing:.04em; transition:border-color .15s; }
+  .input-row input:focus { border-color:var(--accent); }
+  .input-row button { padding:0 20px; background:var(--accent); border:none;
+    border-radius:8px; font-size:14px; font-weight:700; color:#000;
+    cursor:pointer; white-space:nowrap; }
+  .input-row button:hover { opacity:.85; }
+  .hint { font-size:11px; color:var(--muted); margin-top:6px; }
+
+  /* Result */
+  .result-empty { border:2px dashed var(--border); border-radius:10px; padding:28px;
+    text-align:center; color:var(--muted); font-size:13px; line-height:1.7; }
+  .result-empty span { display:block; font-size:30px; margin-bottom:8px; }
+  .result-ok  { border:2px solid var(--ok);  background:#23863614; border-radius:10px; padding:18px 20px; }
+  .result-err { border:2px solid var(--err); background:#da363314; border-radius:10px; padding:18px 20px; }
+  .result-title { font-size:14px; font-weight:800; margin-bottom:12px; }
+  .result-ok  .result-title { color:var(--ok); }
+  .result-err .result-title { color:var(--err); }
+  .kv { display:grid; grid-template-columns:80px 1fr; gap:6px 10px; }
+  .kv-k { font-size:12px; color:var(--muted); }
+  .kv-v { font-size:13px; color:var(--text); font-weight:600; }
+  .kv-v.mono { font-family:monospace; color:var(--accent); font-size:12px; }
+
+  .err-box { background:#da363314; border:1px solid var(--err); border-radius:8px;
+    padding:12px 14px; font-size:13px; color:#f85149; line-height:1.6; margin-top:10px; display:none; }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <div>
+    <h1>📡 QR Code Scanning</h1>
+    <p class="sub">Use your camera to scan an instrument QR code, or enter the value manually.</p>
+  </div>
+
+  <!-- Camera scanner -->
+  <div class="card">
+    <h2>Camera scanner</h2>
+    <div id="status-badge" class="status-badge">
+      <span class="dot"></span> Camera off
+    </div>
+
+    <div class="cam-wrap" id="cam-wrap">
+      <video id="cam-video" playsinline autoplay muted></video>
+      <canvas id="cam-canvas"></canvas>
+      <div class="scan-overlay"><div class="scan-box"></div></div>
+      <div class="scan-hint">Point at QR code</div>
+      <div class="scan-flash" id="scan-flash"></div>
+    </div>
+
+    <div id="cam-error" class="err-box"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-start" id="btn-start" onclick="startScanner()">📷 Start Camera</button>
+      <button class="btn btn-stop"  id="btn-stop"  onclick="stopScanner()">⏹ Stop Camera</button>
+    </div>
+  </div>
+
+  <!-- Manual fallback -->
+  <div class="card">
+    <h2>Manual entry fallback</h2>
+    <div class="input-row">
+      <input id="scan-input" type="text" placeholder="e.g. QR-SIE-001"
+        onkeydown="if(event.key==='Enter') doScan()"/>
+      <button onclick="doScan()">Scan</button>
+    </div>
+    <p class="hint">Type or paste the QR code value if camera is unavailable.</p>
+  </div>
+
+  <!-- Result -->
+  <div class="card">
+    <h2>Instrument details</h2>
+    <div id="result">
+      <div class="result-empty">
+        <span>🔲</span>
+        Scan a QR code to instantly retrieve instrument details.
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+var INSTRUMENTS = [
+  { instrumentName:"Siemens SITRANS P320",      brand:"Siemens",        function:"Differential Pressure Transmitter", serialNumber:"SIE-P320-00412",   qrCodeID:"QR-SIE-001" },
+  { instrumentName:"Endress+Hauser Promag 10W", brand:"Endress+Hauser", function:"Electromagnetic Flow Meter",       serialNumber:"EH-PMG10W-00788",  qrCodeID:"QR-EH-002"  },
+  { instrumentName:"Honeywell STT850",           brand:"Honeywell",      function:"Smart Temperature Transmitter",    serialNumber:"HON-STT850-01155", qrCodeID:"QR-HON-003" }
+];
+
+var camStream = null, rafId = null, cooldown = false;
+
+function setStatus(scanning) {
+  var b = document.getElementById('status-badge');
+  if (scanning) {
+    b.className = 'status-badge scanning';
+    b.innerHTML = '<span class="dot"></span> Scanning…';
+  } else {
+    b.className = 'status-badge';
+    b.innerHTML = '<span class="dot"></span> Camera off';
+  }
+}
+
+function showCamError(msg) {
+  var el = document.getElementById('cam-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideCamError() {
+  document.getElementById('cam-error').style.display = 'none';
+}
+
+function startScanner() {
+  hideCamError();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCamError('❌ Camera API not available on this browser. Please use Chrome or Safari on your mobile device.');
+    return;
+  }
+  var constraints = {
+    video: { facingMode: { exact: 'environment' } },
+    audio: false
+  };
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(function(stream) {
+      camStream = stream;
+      var video = document.getElementById('cam-video');
+      video.srcObject = stream;
+      video.play();
+      document.getElementById('cam-wrap').classList.add('active');
+      document.getElementById('btn-start').style.display = 'none';
+      document.getElementById('btn-stop').style.display  = 'block';
+      setStatus(true);
+      rafId = requestAnimationFrame(scanFrame);
+    })
+    .catch(function(err) {
+      var msg;
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = '🚫 Camera permission denied. Please allow camera access in your browser/device settings, then try again.';
+      } else if (err.name === 'NotFoundError') {
+        msg = '📷 No camera found on this device.';
+      } else if (err.name === 'NotReadableError') {
+        msg = '⚠️ Camera is in use by another app. Close it and try again.';
+      } else {
+        msg = '❌ Could not start camera: ' + err.message;
+      }
+      showCamError(msg);
+    });
+}
+
+function stopScanner() {
+  if (rafId)      { cancelAnimationFrame(rafId); rafId = null; }
+  if (camStream)  { camStream.getTracks().forEach(function(t){ t.stop(); }); camStream = null; }
+  var video = document.getElementById('cam-video');
+  video.srcObject = null;
+  document.getElementById('cam-wrap').classList.remove('active');
+  document.getElementById('btn-start').style.display = 'block';
+  document.getElementById('btn-stop').style.display  = 'none';
+  setStatus(false);
+}
+
+function scanFrame() {
+  var video  = document.getElementById('cam-video');
+  var canvas = document.getElementById('cam-canvas');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    if (code && !cooldown) {
+      cooldown = true;
+      // Flash feedback
+      var flash = document.getElementById('scan-flash');
+      flash.style.opacity = '1';
+      setTimeout(function(){ flash.style.opacity = '0'; }, 300);
+      renderResult(code.data);
+      stopScanner();
+      // Cooldown to prevent double-fire
+      setTimeout(function(){ cooldown = false; }, 2000);
+      return;
+    }
+  }
+  rafId = requestAnimationFrame(scanFrame);
+}
+
+function doScan() {
+  var val = document.getElementById('scan-input').value.trim();
+  if (!val) return;
+  renderResult(val);
+}
+
+function renderResult(val) {
+  var match = INSTRUMENTS.filter(function(i) {
+    return i.qrCodeID.toLowerCase() === val.toLowerCase();
+  })[0];
+  var el = document.getElementById('result');
+  if (match) {
+    el.innerHTML =
+      '<div class="result-ok">' +
+        '<div class="result-title">✅ Instrument identified</div>' +
+        '<div class="kv">' +
+          '<span class="kv-k">Name</span>     <span class="kv-v">'      + match.instrumentName + '</span>' +
+          '<span class="kv-k">Brand</span>    <span class="kv-v">'      + match.brand          + '</span>' +
+          '<span class="kv-k">Function</span> <span class="kv-v">'      + match.function       + '</span>' +
+          '<span class="kv-k">Serial</span>   <span class="kv-v mono">' + match.serialNumber   + '</span>' +
+          '<span class="kv-k">QR Code</span>  <span class="kv-v mono">' + match.qrCodeID       + '</span>' +
+        '</div>' +
+      '</div>';
+  } else {
+    el.innerHTML =
+      '<div class="result-err">' +
+        '<div class="result-title">❌ QR code not recognised</div>' +
+        '<p style="font-size:13px;color:var(--text);line-height:1.6">' +
+          'No instrument found for <strong style="font-family:monospace">' + val + '</strong>. ' +
+          'Make sure the QR code is registered in the database.' +
+        '</p>' +
+      '</div>';
+  }
+}
+</script>
+</body>
+</html>
