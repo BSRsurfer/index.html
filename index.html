@@ -182,9 +182,9 @@ function startScanner() {
   var constraints = {
     video: {
       facingMode: { exact: 'environment' },
-      focusMode: 'continuous',
       width: { ideal: 1280 },
-      height: { ideal: 720 }
+      height: { ideal: 720 },
+      advanced: [{ focusMode: 'continuous' }]
     },
     audio: false
   };
@@ -194,6 +194,11 @@ function startScanner() {
       var video = document.getElementById('cam-video');
       video.srcObject = stream;
       video.play();
+      // Force continuous autofocus on the track
+      var track = stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function(){});
+      }
       document.getElementById('cam-wrap').classList.add('active');
       document.getElementById('btn-start').style.display = 'none';
       document.getElementById('btn-stop').style.display  = 'block';
